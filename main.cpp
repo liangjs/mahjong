@@ -325,8 +325,8 @@ double stateProb(const HState &a)
 
 double evaluate(const int handcards[CNAME_TNUM][NUM_MAX], const vector<Pack> &packs, vector<HState> &targets)
 {
-    const int TARGET_SIZE_ALL = 1000;
-    const int TARGET_SIZE_SUM = 20;
+    const int TARGET_SIZE_ALL = 500;
+    const int TARGET_SIZE_SUM = 5;
     targets.clear();
 
     priority_queue<HState> q;
@@ -431,10 +431,12 @@ Card selectPlay(Card newcard, bool lastgang)
     }
 
     // HU
+    --handcards[newcard.cname][newcard.num];
     if (canHu(handcards, packs[menfeng], newcard, true, wallcards[newcard.cname][newcard.num] == 0, lastgang, wallcnt == 0)) {
         output("HU\n");
         return Card();
     }
+    ++handcards[newcard.cname][newcard.num];
 
     double maxpr = 0;
     vector<HState> targets;
