@@ -33,6 +33,29 @@ void ungets(const char *s)
 
 const double eps = 1e-10;
 const double inf = 1e100;
+const double timeout = 0.9;
+
+class Timer
+{
+    clock_t cl;
+public:
+    void start()
+    {
+        cl = clock();
+    }
+    double get()
+    {
+        return double(clock() - cl) / CLOCKS_PER_SEC;
+    }
+    bool out()
+    {
+        return get() > timeout;
+    }
+} timer;
+
+#define TIMER_JUMP(timer, label) {if (timer.out()) goto label;}
+
+#define ADDHUA 1
 
 #define CNAME_WAN   0
 #define CNAME_BING  1
@@ -98,7 +121,7 @@ struct Pack {
     Pack(uint8_t p, Card c, uint8_t f = FROM_SELF): pname(p), card(c), from(f) {}
 };
 
-vector<Pack> allpacks;
+vector<Pack> allpacks, allduis;
 void initAllPacks()
 {
     // 顺子
@@ -119,6 +142,13 @@ void initAllPacks()
         allpacks.push_back(Pack(PNAME_PENG, Card(CNAME_JIAN, i), FROM_ANY));
         allpacks.push_back(Pack(PNAME_GANG, Card(CNAME_JIAN, i), FROM_ANY));
     }
+    for (int i = 0; i < CNAME_XUNUM; ++i)
+        for (int j = 1; j <= 9; ++j)
+            allduis.push_back(Pack(PNAME_NONE, Card(i, j), FROM_ANY));
+    for (int i = 1; i <= 4; ++i)
+        allduis.push_back(Pack(PNAME_NONE, Card(CNAME_FENG, i), FROM_ANY));
+    for (int i = 1; i <= 3; ++i)
+        allduis.push_back(Pack(PNAME_NONE, Card(CNAME_JIAN, i), FROM_ANY));
 }
 
 int menfeng, quanfeng;
@@ -135,7 +165,7 @@ struct HState {
     vector<pair<Card, int>> needcards, havecards;
     double pr; // 概率
     double pr2; // 大的先搜
-    double ex; // 番数期望
+    //double ex; // 番数期望
     bool operator< (const HState &a) const
     {
         return pr2 < a.pr2;
@@ -185,7 +215,7 @@ void showTargets(const vector<HState> &a)
         printf("| ");
         for (auto i : hand)
             printf("%s ", i.c_str());
-        printf("| %g %g\n", s.pr, s.ex);
+        printf("| %g\n", s.pr);
     }
 }
 
@@ -200,6 +230,12 @@ void showHand()
                 printf("%c%d ", cname2char[i], j);
     printf("| hand\n");
 }
+
+#if ADDHUA
+#define goodfan(fan, hua) ((fan) >= 8)
+#else
+#define goodfan(fan, hua) ((fan) - (hua) >= 8)
+#endif
 
 bool canHu(const int handcards[CNAME_TNUM][NUM_MAX],
            const vector<Pack> &packs,
@@ -234,7 +270,7 @@ bool canHu(const int handcards[CNAME_TNUM][NUM_MAX],
         int fan = 0;
         for (auto i : ans)
             fan += i.first;
-        return fan - huashu[menfeng] >= 8;
+        return goodfan(fan, huashu[menfeng]);
     }
     catch (...) {
         return false;
@@ -323,7 +359,69 @@ double stateProb(const HState &a)
     return min(ans, 1.0);
 }
 
-double evaluate(const int handcards[CNAME_TNUM][NUM_MAX], const vector<Pack> &packs, vector<HState> &targets)
+void qidui(vector<HState> &targets)
+{
+    priority_queue<HState> q;
+    HState s;
+    int cnt = 0;
+    const int QIDUI_NUM = 10;
+    auto update = [&](uint8_t pname, Card card) {
+        HState t = s;
+        if (addCardList(t.needcards, card, 2) > handcards[card.cname][card.num] + wallcards[card.cname][card.num])
+            return;
+        t.packs.push_back(Pack(pname, card, FROM_SELF));
+        if ((t.pr = stateProb(t)) > eps) {
+            t.pr2 = t.pr * pow(1.5, t.packs.size());
+            if (t.packs.size() == 7) {
+                int fan = getFan(t);
+                if (goodfan(fan, huashu[menfeng])) {
+                    //t.ex = t.pr * log2(fan);
+                    targets.push_back(t);
+                    ++cnt;
+                }
+            }
+            else
+                q.push(t);
+        }
+        t.packs.pop_back();
+    };
+
+    s.pr = s.pr2 = 1;
+    q.push(s);
+    while (cnt < QIDUI_NUM && !q.empty()) {
+        s = q.top();
+        q.pop();
+        auto ibegin = allduis.begin();
+        if (!s.packs.empty()) {
+            /* 防止重复枚举 */
+            Pack sback = s.packs.back();
+            while (ibegin != allduis.end()) {
+                if (ibegin->pname == sback.pname && ibegin->card == sback.card)
+                    break;
+                ++ibegin;
+            }
+        }
+        for (auto i = ibegin; i != allduis.end(); ++i)
+            update(i->pname, i->card);
+    }
+}
+
+void shisanyao(vector<HState> &targets)
+{
+    HState s;
+    for (int i = 0; i < CNAME_XUNUM; ++i) {
+        s.needcards.emplace_back(Card(i, 1), 1);
+        s.needcards.emplace_back(Card(i, 9), 1);
+    }
+    for (int i = 1; i <= 4; ++i)
+        s.needcards.emplace_back(Card(CNAME_FENG, i), 1);
+    for (int i = 1; i <= 3; ++i)
+        s.needcards.emplace_back(Card(CNAME_JIAN, i), 1);
+    if ((s.pr = stateProb(s)) > eps)
+        targets.push_back(s);
+}
+
+double evaluate(const vector<Pack> &packs, vector<HState> &targets)
 {
     const int TARGET_SIZE_ALL = 500;
     const int TARGET_SIZE_SUM = 5;
@@ -354,8 +452,8 @@ double evaluate(const int handcards[CNAME_TNUM][NUM_MAX], const vector<Pack> &pa
                 t.pr2 = t.pr * pow(1.5, t.packs.size());
                 if (pname == PNAME_NONE) {
                     int fan = getFan(t);
-                    if (fan - huashu[menfeng] >= 8) {
-                        t.ex = t.pr * log2(fan);
+                    if (goodfan(fan, huashu[menfeng])) {
+                        //t.ex = t.pr * log2(fan);
                         targets.push_back(t);
                     }
                 }
@@ -387,21 +485,21 @@ double evaluate(const int handcards[CNAME_TNUM][NUM_MAX], const vector<Pack> &pa
                 update(i->pname, i->card);
         }
         else { // 缺将牌
-            for (int i = 0; i < CNAME_XUNUM; ++i)
-                for (int j = 1; j <= 9; ++j)
-                    update(PNAME_NONE, Card(i, j));
-            for (int i = 1; i <= 4; ++i)
-                update(PNAME_NONE, Card(CNAME_FENG, i));
-            for (int i = 1; i <= 3; ++i)
-                update(PNAME_NONE, Card(CNAME_JIAN, i));
+            for (auto i : allduis)
+                update(i.pname, i.card);
         }
     }
 
-    sort(targets.begin(), targets.end(), [](const HState & a, const HState & b) {return a.ex > b.ex;});
+    if (packs.empty()) {
+        qidui(targets);
+        shisanyao(targets);
+    }
+
+    sort(targets.begin(), targets.end(), [](const HState & a, const HState & b) {return a.pr > b.pr;});
     targets.resize(min((int)targets.size(), TARGET_SIZE_SUM));
     double ans = 0;
     for (const HState &i : targets)
-        ans += i.ex;
+        ans += i.pr;
     return ans;
 }
 
@@ -444,7 +542,7 @@ Card selectPlay(Card newcard, bool lastgang)
     char anstype;
     auto update = [&](char tp, Card card) {
         vector<HState> tv;
-        double v = evaluate(handcards, packs[menfeng], tv);
+        double v = evaluate(packs[menfeng], tv);
         if (v > maxpr || maxpr == 0) {
             maxpr = v;
             targets = tv;
@@ -461,6 +559,7 @@ Card selectPlay(Card newcard, bool lastgang)
             update('B', newcard);
             ++handcards[newcard.cname][newcard.num];
             p.pname = PNAME_PENG;
+            TIMER_JUMP(timer, all_end);
         }
 
     for (int i = 0; i < CNAME_TNUM; ++i)
@@ -479,7 +578,10 @@ Card selectPlay(Card newcard, bool lastgang)
                 packs[menfeng].pop_back();
                 handcards[i][j] = 4;
             }
+            TIMER_JUMP(timer, all_end);
         }
+
+all_end:
 
 #ifdef LOCAL
     showHand();
@@ -509,13 +611,13 @@ void forcePlay(Card newcard, int from, bool lastgang)
     }
 
     vector<HState> targets;
-    double maxpr = evaluate(handcards, packs[menfeng], targets);
+    double maxpr = evaluate(packs[menfeng], targets);
     Card ans, mid;
     char anstype = 'N';
 
     auto update = [&](char tp, Card cardout) {
         vector<HState> tv;
-        double v = evaluate(handcards, packs[menfeng], tv);
+        double v = evaluate(packs[menfeng], tv);
         if (v > maxpr) {
             maxpr = v;
             targets = tv;
@@ -537,7 +639,9 @@ void forcePlay(Card newcard, int from, bool lastgang)
                     if (update(tp, Card(i, j)))
                         ok = true;
                     ++handcards[i][j];
+                    TIMER_JUMP(timer, emu_end);
                 }
+emu_end:
         return ok;
     };
 
@@ -563,6 +667,7 @@ void forcePlay(Card newcard, int from, bool lastgang)
                 if (i != newcard.num)
                     ++handcards[tmp.cname][i];
             packs[menfeng].pop_back();
+            TIMER_JUMP(timer, all_end);
         }
 
     // GANG
@@ -582,6 +687,8 @@ void forcePlay(Card newcard, int from, bool lastgang)
         handcards[newcard.cname][newcard.num] = 2;
         packs[menfeng].pop_back();
     }
+
+all_end:
 
 #ifdef LOCAL
     showHand();
@@ -669,6 +776,7 @@ void main_loop()
         bool nowmo = false, nowgang = false;
         int op;
         scanf("%d", &op);
+        timer.start();
         if (op == 2) {
             nowcard = readCard();
             ++handcards[nowcard.cname][nowcard.num];
@@ -738,10 +846,20 @@ void main_loop()
             }
             else if (strcmp(act, "BUGANG") == 0) {
                 nowcard = readCard();
-                if (player != menfeng)
+                if (player != menfeng) {
                     --wallcards[nowcard.cname][nowcard.num];
+                    if (canHu(handcards, packs[menfeng], nowcard, false, true, true, wallcnt == 0)) { // 抢杠
+                        output("HU\n");
+                        exit(0);
+                    }
+                }
                 else
                     --handcards[nowcard.cname][nowcard.num];
+                for (Pack &p : packs[player])
+                    if (p.pname == PNAME_PENG && p.card == nowcard) {
+                        p.pname = PNAME_GANG;
+                        break;
+                    }
                 output("PASS\n");
                 nowgang = true;
             }

@@ -8,7 +8,9 @@ set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 
 ADD_LIBRARY(MahjongGB STATIC LibMahjongGB/MahjongGB.cpp)
 
-add_definitions(-DLOCAL)
+#add_definitions(-DLOCAL)
 add_executable(main main.cpp)
+add_executable(mahjrun mahjrun.cpp)
 
 target_link_libraries(main MahjongGB)
+target_link_libraries(mahjrun MahjongGB)
