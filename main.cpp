@@ -108,6 +108,7 @@ struct Card {
 #define PNAME_PENG  1
 #define PNAME_GANG  2
 #define PNAME_CHI   3
+const int reqnum[3] = {2, 3, 4};
 const char *pname2char[4] = {"NONE", "PENG", "GANG", "CHI"};
 #define FROM_SELF   0xff    // 非鸣牌
 #define FROM_ANY    0xfe
@@ -184,7 +185,6 @@ void stateToString(const HState &a, vector<pair<string, pair<string, int>>> &pac
                 hand.push_back(Card(p.card.cname, p.card.num + 1).toString());
             }
             else {
-                const int reqnum[] = {[PNAME_NONE] = 2, [PNAME_PENG] = 3, [PNAME_GANG] = 4};
                 for (int i = 0; i < reqnum[p.pname]; ++i)
                     hand.push_back(p.card.toString());
             }
@@ -340,7 +340,6 @@ double stateProb(const HState &a)
                     return 0;
             }
             else {
-                const int reqnum[] = {[PNAME_NONE] = 2, [PNAME_PENG] = 3, [PNAME_GANG] = 4};
                 if (reqnum[i.pname] <= handcards[i.card.cname][i.card.num])
                     return 0;
             }
@@ -440,7 +439,6 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
             }
         }
         else {
-            const int reqnum[] = {[PNAME_NONE] = 2, [PNAME_PENG] = 3, [PNAME_GANG] = 4};
             if (addCardList(t.needcards, card, reqnum[pname]) > handcards[card.cname][card.num] + wallcards[card.cname][card.num])
                 return;
         }

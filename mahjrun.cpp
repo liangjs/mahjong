@@ -1,5 +1,9 @@
 #include "LibMahjongGB/MahjongGB.h"
+#ifdef _MSC_VER
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 
 char *exe[4];
 
@@ -242,6 +246,7 @@ char *interact(int id, const char *fmt, ...)
     fgets(abuf, 100, file);
     abuf[strlen(abuf) - 1] = '\0'; // ignore '\n'
     logs[id].push_back(abuf);
+    fclose(file);
 
     return abuf;
 }
@@ -469,6 +474,15 @@ void main_loop()
     }
 }
 
+void prepare_log()
+{
+#ifdef _WIN32
+    system("mkdir log > nul");
+#else
+    system("mkdir -p log");
+#endif
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 5) {
@@ -477,7 +491,7 @@ int main(int argc, char **argv)
     }
     for (int i = 0; i < 4; ++i)
         exe[i] = argv[i + 1];
-    system("mkdir -p log");
+    prepare_log();
 
     init();
     MahjongInit();

@@ -1,10 +1,13 @@
 project(mahjong)
-cmake_minimum_required(VERSION 2.8)
-#set(CMAKE_VERBOSE_MAKEFILE ON)
+cmake_minimum_required(VERSION 3.0)
+set(CMAKE_VERBOSE_MAKEFILE ON)
 
 set(CMAKE_BUILD_TYPE debug)
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS "-Wall -Wextra")
+set(CMAKE_CXX_FLAGS "-Wall")
+#if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+#	set(CMAKE_CXX_FLAGS "/utf-8")
+#endif()
 
 ADD_LIBRARY(MahjongGB STATIC LibMahjongGB/MahjongGB.cpp)
 

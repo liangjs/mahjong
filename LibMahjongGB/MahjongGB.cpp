@@ -1,4 +1,4 @@
-#include "MahjongGB.h"
+﻿#include "MahjongGB.h"
 
 namespace mahjong {
 
@@ -3654,7 +3654,7 @@ int calculate_fan(const calculate_param_t *calculate_param, fan_table_t *fan_tab
 
 using namespace std;
 
-static unordered_map<string, mahjong::tile_t> str2tile;
+static map<string, mahjong::tile_t> str2tile;
 
 vector<pair<int, string> > MahjongFanCalculator(
     vector<pair<string, pair<string, int> > > pack,
