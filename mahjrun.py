@@ -117,16 +117,16 @@ if __name__ == "__main__":
                         interact(i, "3 %d DRAW" % p)
             else:  # drawable
                 msg = logs[p][-1]
-                actions(p)
+                #actions(p)
                 if msg[:4] == "PLAY":
-                    c = Card(CardName.from_char(msg[5]), int(msg[6]))
+                    c = Card.from_str(msg[5:7])
                     if not board.chupai(p, c):
                         runerror(p)
                     show_stat("%d PLAY %s" % (p, c))
                     for i in range(PlayerNum):
                         interact(i, "3 %d PLAY %s" % (p, c))
                 elif msg[:4] == "GANG":
-                    c = Card(CardName.from_char(msg[5]), int(msg[6]))
+                    c = Card.from_str(msg[5:7])
                     if not board.angang(p, c):
                         runerror(p)
                     show_stat("%d GANG %s" % (p, c))
@@ -149,19 +149,19 @@ if __name__ == "__main__":
             order = {"PASS": 0, "CHI": 1, "PENG": 2, "GANG": 3, "HU": 4}
             p = max(range(PlayerNum), key=lambda i: order[logs[i][-1].split(' ')[0]])
             msg = logs[p][-1]
-            actions(p)
+            #actions(p)
             if msg == "PASS":
                 board.outcard = None
             elif msg[:3] == "CHI":
-                mid = Card(CardName.from_char(msg[4]), int(msg[5]))
-                c = Card(CardName.from_char(msg[7]), int(msg[8]))
+                mid = Card.from_str(msg[4:6])
+                c = Card.from_str(msg[7:9])
                 if not board.chi(p, mid) or not board.chupai(p, c):
                     runerror(p)
                 show_stat("%d CHI %s PLAY %s" % (p, mid, c))
                 for i in range(PlayerNum):
                     interact(i, "3 %d CHI %s %s" % (p, mid, c))
             elif msg[:4] == "PENG":
-                c = Card(CardName.from_char(msg[5]), int(msg[6]))
+                c = Card.from_str(msg[5:7])
                 if not board.peng(p) or not board.chupai(p, c):
                     runerror(p)
                 show_stat("%d PENG %s PLAY %s" % (p, oc, c))

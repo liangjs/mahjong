@@ -45,6 +45,10 @@ class Card:
 
     __repr__ = __str__
 
+    @staticmethod
+    def from_str(s):
+        return Card(CardName.from_char(s[0]), int(s[1]))
+
 
 class PackName(Enum):
     NONE = 0
@@ -87,13 +91,19 @@ CardIndexes = [(i, j) for i in range(3) for j in range(1, 10)] \
 
 
 class MahjongBoard:
-    def __init__(self, seed=0):
+    def __init__(self, seed=0, quanfeng=None, zhuang=0, wallcards=None):
         self.seed = seed
         self.rand = random.Random(seed)
-
-        self.quanfeng = self.rand.randint(0, 3)
-        self.wallcards = allcards + allcards_nohua * 3
-        self.rand.shuffle(self.wallcards)
+        self.zhuang = zhuang
+        if wallcards is None:
+            self.wallcards = allcards + allcards_nohua * 3
+            self.rand.shuffle(self.wallcards)
+        else:
+            self.wallcards = wallcards
+        if quanfeng is None:
+            self.quanfeng = self.rand.randint(0, 3)
+        else:
+            self.quanfeng = quanfeng
         self.leftcards = [[0] * CardNumMax for i in range(CardNameMax)]
         for c in self.wallcards:
             self.leftcards[c.cname.value][c.num] += 1
@@ -118,7 +128,7 @@ class MahjongBoard:
         self.cfrom = None
         self.lastgang = (None, False)  # <card, shown>
         self.lastmo = None
-        self.nextturn = (0, False)  # <player, drawable>
+        self.nextturn = (zhuang, False)  # <player, drawable>
 
     def show_player(self, p):
         hand = reduce(lambda acc, idx: acc + [str(CardName(idx[0])) + str(idx[1])] * self.handcards[p][idx[0]][idx[1]],
@@ -190,6 +200,7 @@ class MahjongBoard:
         for i in range(len(self.packs[p])):
             pk = self.packs[p][i]
             if pk.card == c and pk.pname == PackName.PENG:
+                self.handcards[p][c.cname.value][c.num] -= 1
                 pk.pname = PackName.GANG
                 self.outcard = None
                 self.lastgang = (c, True)
@@ -239,7 +250,7 @@ class MahjongBoard:
                 if i != c.num:
                     self.handcards[p][c.cname][i] += 1
             return False
-        self.packs[p].append(Pack(PackName.CHI, mid, (p - 1) % PlayerNum))
+        self.packs[p].append(Pack(PackName.CHI, mid, c.num - mid.num + 2))
         self.outcard = None
         self.lastgang = (None, False)
         self.nextturn = (p, True)
@@ -256,15 +267,18 @@ class MahjongBoard:
                                        str(c),
                                        len(self.huas[p]),
                                        iszimo,
-                                       self.leftcards[c.cname.value][c.num] == 0,
+                                       self.leftcards[c.cname.value][c.num] \
+                                        + sum(self.handcards[i][c.cname.value][c.num] for i in range(PlayerNum)) \
+                                        - self.handcards[p][c.cname.value][c.num] == 0,
                                        self.lastgang[0] is not None,
                                        len(self.wallcards) == 0,
-                                       p,
+                                       (p - self.zhuang) % PlayerNum,
                                        self.quanfeng)
             #ans = reduce(lambda x, y: x + y[0], fan, 0)
             #return ans
             return fan
         except Exception as e:
+            #print(e)
             return ()
 
     def zimo(self, p):
@@ -322,7 +336,6 @@ class MahjongBoard:
                 return ["DIANPAO"]
             else:
                 return ["PASS"]
-
 
     def player_stat(self, p):
         ans = copy.deepcopy(self)
