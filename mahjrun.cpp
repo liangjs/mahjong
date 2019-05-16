@@ -411,7 +411,7 @@ void main_loop()
                     if (handcards[id][c.cname][c.num] < 3)
                         runerror(id);
                     handcards[id][c.cname][c.num] -= 3;
-                    packs[id].push_back(Pack(PNAME_PENG, c, id0));
+                    packs[id].push_back(Pack(PNAME_GANG, c, id0));
                     show_stat(id, "GANG %s", c.toString().c_str());
                     for (int i = 0; i < 4; ++i) {
                         interact(i, "3 %d GANG", id);
