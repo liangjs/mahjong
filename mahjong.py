@@ -151,6 +151,7 @@ class MahjongBoard:
     def mopai(self, p):
         if p != self.nextturn[0] or self.nextturn[1]:
             return None
+        self.outcard = None
         ans = []
         while len(self.wallcards) != 0:
             c = self.wallcards[0]
@@ -191,10 +192,7 @@ class MahjongBoard:
         self.nextturn = (p, False)
         return True
 
-    def bugang(self, p):
-        c = self.lastmo
-        if c is None:
-            return False
+    def bugang(self, p, c):
         if p != self.nextturn[0] or not self.nextturn[1]:
             return False
         for i in range(len(self.packs[p])):

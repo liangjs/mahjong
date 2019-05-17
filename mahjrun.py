@@ -134,7 +134,8 @@ if __name__ == "__main__":
                         interact(i, "3 %d GANG" % p)
                 elif msg == "BUGANG":
                     c = board.lastmo
-                    if not board.bugang(p):
+                    # TODO: wrong!!!!!!!
+                    if not board.bugang(p, c):
                         runerror(p)
                     show_stat("%d BUGANG %s" % (p, c))
                     for i in range(PlayerNum):
