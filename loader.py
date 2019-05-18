@@ -4,6 +4,8 @@
 from mahjong import *
 import os
 import random
+from multiprocessing import Queue, Process
+import queue
 
 
 def card_id(c):
@@ -13,9 +15,6 @@ def card_id(c):
         if c2 == c:
             return i
     return -1
-
-
-DATA_LOADER_FILE_BATCH = 10
 
 
 class LoaderHUAError(Exception):
@@ -151,12 +150,16 @@ class MahjongLoader:
         self._record_winner(win)
 
     def _record(self, board, player, action, card):
-        stat = board.player_stat(player)
-        hands = [stat.handcards[player][idx[0]][idx[1]] for idx in CardIndexes]
-        lefts = [stat.leftcards[idx[0]][idx[1]] for idx in CardIndexes]
+        hands = [board.handcards[player][idx[0]][idx[1]] for idx in CardIndexes]
+        lefts = [board.leftcards[idx[0]][idx[1]] for idx in CardIndexes]
+        for p in range(PlayerNum):
+            if p != player:
+                for i in range(len(lefts)):
+                    idx = CardIndexes[i]
+                    lefts[i] += board.handcards[p][idx[0]][idx[1]]
         shuns = [0] * len(CardIndexes)
         kes = [0] * len(CardIndexes)
-        for pack in stat.packs[player]:
+        for pack in board.packs[player]:
             cid = card_id(pack.card)
             if pack.pname == PackName.CHI:
                 shuns[cid] += 1
@@ -169,26 +172,26 @@ class MahjongLoader:
                     kes[cid] -= 4
         outc = [0] * len(CardIndexes)
         cfrom = 0
-        if stat.outcard:
-            outc[card_id(stat.outcard)] = 1
-            cfrom = (player - stat.cfrom) % PlayerNum
-        in_tensor = [hands, shuns, kes, lefts, outc, cfrom]
-        out_tensor = [[0] * 5, [0] * len(CardIndexes)]
+        if board.outcard:
+            outc[card_id(board.outcard)] = 1
+            cfrom = (player - board.cfrom) % PlayerNum
+        in_tensor = [[shuns, kes, hands, lefts, outc], cfrom]
+        out_tensor = [None, [0] * len(CardIndexes)]
         cid = card_id(card)
         # 出、过、吃、碰、杠
         if action == "chupai":
-            out_tensor[0][0] = 1
+            out_tensor[0] = 0
             out_tensor[1][cid] = 1
         elif action == "pass":
-            out_tensor[0][1] = 1
+            out_tensor[0] = 1
         elif action == "chi":
-            out_tensor[0][2] = 1
+            out_tensor[0] = 2
             out_tensor[1][cid] = 1
         elif action == "peng":
-            out_tensor[0][3] = 1
+            out_tensor[0] = 3
             out_tensor[1][cid] = 1
         elif action == "angang" or action == "bugang" or action == "gang":
-            out_tensor[0][4] = 1
+            out_tensor[0] = 4
             out_tensor[1][cid] = 1
         else:
             raise RuntimeError("unknown action")
@@ -198,44 +201,63 @@ class MahjongLoader:
         self.records.append([player, in_tensor, out_tensor])
     
     def _record_winner(self, win):
+        """
         score = [0] * PlayerNum
         if win == -1:
             score = [0.25] * PlayerNum
         else:
             score[win] = 1
+        """
+        score = [0.25] * PlayerNum
         for r in self.records:
             r[2].append(score[r[0]])
 
 
 class DataLoader:
     def __init__(self, path):
-        self.files = []
-        def addfiles(name):
-            self.files += map(lambda f: os.path.join(path, name, f), os.listdir(os.path.join(path, name)))
+        DATA_LOADER_BUF_MAX = 1000
+        files = []
+        def addfiles(files, name):
+            files += map(lambda f: os.path.join(path, name, f), os.listdir(os.path.join(path, name)))
         for name in ["LIU", "MO", "PLAY"]:
-            addfiles(name)
-        random.shuffle(self.files)
-        self.data = []
+            addfiles(files, name)
+        random.shuffle(files)
+        self.files = Queue()
+        for i in files:
+            self.files.put(i)
+        self.data = Queue(DATA_LOADER_BUF_MAX)
 
-    def _new_data(self):
-        if len(self.files) == 0:
-            return False
-        num = min(len(self.files), DATA_LOADER_FILE_BATCH)
-        for i in range(num):
+    def generate(self, processes, batch_size):
+        def worker(worker_id):
+            data = []
+            while True:
+                try:
+                    file = self.files.get(False)
+                    a = MahjongLoader(file)
+                    while len(a.records) != 0:
+                        num = min(batch_size - len(data), len(a.records))
+                        data += a.records[:num]
+                        del a.records[:num]
+                        if len(data) == batch_size:
+                            self.data.put(data)
+                            data = []
+                except queue.Empty:
+                    if self.files.empty():
+                        print("exit", worker_id)
+                        break
+                except LoaderHUAError:
+                    continue
+            self.data.put(data)
+
+        procs = [Process(target=worker, args=(i,)) for i in range(processes)]
+        for proc in procs:
+            proc.start()
+        while True:
             try:
-                a = MahjongLoader(self.files[i])
-            except LoaderHUAError:
-                continue
-            self.data += a.records
-        del self.files[:num]
-        random.shuffle(self.data)
-        return True
-
-    def get_data(self, num):
-        while len(self.data) < num:
-            if not self._new_data():
-                break
-        num = min(num, len(self.data))
-        ans = self.data[:num]
-        del self.data[:num]
-        return ans
+                data = self.data.get(timeout=1)
+                yield data
+            except queue.Empty:
+                if self.files.empty():
+                    break
+        for proc in procs:
+            proc.join()
