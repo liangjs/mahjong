@@ -23,11 +23,12 @@ class LoaderHUAError(Exception):
 
 class MahjongLoader:
     def __init__(self, file_name):
+        self.file = file_name
         self.records = []
         with open(file_name, 'r') as f:
             lines = f.readlines()
         fengmap = {'东': 0, '南': 1, '西': 2, '北': 3}
-        quanfeng = zhuang = None
+        self.quanfeng = self.zhuang = None
         leftcards = [[0] * CardNumMax for i in range(CardNameMax)]
         for c in allcards + allcards_nohua * 3:
             leftcards[c.cname.value][c.num] += 1
@@ -39,7 +40,7 @@ class MahjongLoader:
             if i == 0:
                 continue
             if i == 1:
-                quanfeng = fengmap[line[0]]
+                self.quanfeng = fengmap[line[0]]
                 continue
             if 2 <= i <= 5:
                 player = int(line[0])
@@ -57,7 +58,7 @@ class MahjongLoader:
                 continue
             if i == 6:
                 wallcards.append(first_card)
-                zhuang = int(line[0])
+                self.zhuang = int(line[0])
             if line[1].find("摸牌") != -1:
                 card = Card.from_str(eval(line[2])[0])
                 if card.cname == CardName.HUA:
@@ -68,7 +69,7 @@ class MahjongLoader:
             leftcards[c.cname.value][c.num] -= 1
         for c in allcards:
             wallcards += [c] * leftcards[c.cname.value][c.num]
-        board = MahjongBoard(quanfeng=quanfeng, zhuang=zhuang, wallcards=wallcards)
+        board = MahjongBoard(quanfeng=self.quanfeng, zhuang=self.zhuang, wallcards=wallcards)
         #board.show_stat()
         res = ()
         win = -1
@@ -175,26 +176,32 @@ class MahjongLoader:
         if board.outcard:
             outc[card_id(board.outcard)] = 1
             cfrom = (player - board.cfrom) % PlayerNum
-        in_tensor = [[shuns, kes, hands, lefts, outc], cfrom]
-        out_tensor = [None, [0] * len(CardIndexes)]
+        in_tensor = [[shuns, kes, hands, lefts, outc], [cfrom, self.quanfeng, (player - self.zhuang) % PlayerNum]]
+        out_tensor = [[0] * 7, [0] * (len(CardIndexes) + 1)]
         cid = card_id(card)
-        # 出、过、吃、碰、杠
+        # 出、过、吃-1、吃+0、吃+1、碰、杠
         if action == "chupai":
-            out_tensor[0] = 0
+            out_tensor[0][0] = 1
             out_tensor[1][cid] = 1
-        elif action == "pass":
-            out_tensor[0] = 1
-        elif action == "chi":
-            out_tensor[0] = 2
-            out_tensor[1][cid] = 1
-        elif action == "peng":
-            out_tensor[0] = 3
-            out_tensor[1][cid] = 1
-        elif action == "angang" or action == "bugang" or action == "gang":
-            out_tensor[0] = 4
-            out_tensor[1][cid] = 1
+            if board.outcard:
+                print("error, outcard!!!", self.file)
+                return
         else:
-            raise RuntimeError("unknown action")
+            out_tensor[1][-1] = 1
+            if action == "pass":
+                if len(board.actions(player)) == 1:
+                    return
+                if random.random() > 0.25:
+                    return
+                out_tensor[0][1] = 1
+            elif action == "chi":
+                out_tensor[0][3 + card.num - board.outcard.num] = 1
+            elif action == "peng":
+                out_tensor[0][5] = 1
+            elif action == "angang" or action == "bugang" or action == "gang":
+                out_tensor[0][6] = 1
+            else:
+                raise RuntimeError("unknown action")
         #print(player)
         #print(in_tensor)
         #print(out_tensor)
@@ -233,7 +240,12 @@ class DataLoader:
             while True:
                 try:
                     file = self.files.get(False)
-                    a = MahjongLoader(file)
+                    try:
+                        a = MahjongLoader(file)
+                    except LoaderHUAError:
+                        continue
+                    except AssertionError:
+                        print("!! assert error", file)
                     while len(a.records) != 0:
                         num = min(batch_size - len(data), len(a.records))
                         data += a.records[:num]
@@ -245,8 +257,6 @@ class DataLoader:
                     if self.files.empty():
                         print("exit", worker_id)
                         break
-                except LoaderHUAError:
-                    continue
             self.data.put(data)
 
         procs = [Process(target=worker, args=(i,)) for i in range(processes)]
@@ -261,3 +271,7 @@ class DataLoader:
                     break
         for proc in procs:
             proc.join()
+
+
+if __name__ == "__main__":
+    MahjongLoader("/run/media/liangjs/Develop/study/game/data/PLAY/2017-01-25-2260.txt")
