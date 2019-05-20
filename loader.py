@@ -8,15 +8,6 @@ from multiprocessing import Queue, Process
 import queue
 
 
-def card_id(c):
-    if c is None:
-        return -1
-    for i, c2 in enumerate(allcards_nohua):
-        if c2 == c:
-            return i
-    return -1
-
-
 class LoaderHUAError(Exception):
     pass
 
@@ -198,8 +189,10 @@ class MahjongLoader:
                 out_tensor[0][3 + card.num - board.outcard.num] = 1
             elif action == "peng":
                 out_tensor[0][5] = 1
-            elif action == "angang" or action == "bugang" or action == "gang":
+            elif action == "gang":
                 out_tensor[0][6] = 1
+            elif action == "angang" or action == "bugang":
+                return
             else:
                 raise RuntimeError("unknown action")
         #print(player)

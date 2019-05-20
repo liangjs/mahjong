@@ -1,6 +1,6 @@
 # mahjong
 
-current bot id: 5c9a458e9f425613e1d61fbc
+current bot id: 5ce22d2dd2337e01c7a39144
 
 ## mahjrun
 

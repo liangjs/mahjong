@@ -90,6 +90,15 @@ CardIndexes = [(i, j) for i in range(3) for j in range(1, 10)] \
               + [(CardName.JIAN.value, i) for i in range(1, 4)]
 
 
+def card_id(c):
+    if c is None:
+        return -1
+    for i, c2 in enumerate(allcards_nohua):
+        if c2 == c:
+            return i
+    return -1
+
+
 class MahjongBoard:
     def __init__(self, seed=0, quanfeng=None, zhuang=0, wallcards=None):
         self.seed = seed
@@ -303,7 +312,7 @@ class MahjongBoard:
             ans = ["PASS"]
             if self.cfrom == p:
                 return ans
-            if MahjongBoard.fan_value(self.dianpao(p)) >= HU_FAN:
+            if MahjongBoard.fan_value(self.dianpao(p)) >= HU_FAN + len(self.huas[p]):
                 return ["DIANPAO"]
             c = self.outcard
             if self.handcards[p][c.cname.value][c.num] == 3:
@@ -318,7 +327,7 @@ class MahjongBoard:
         elif self.nextturn[1]:
             if self.nextturn[0] != p:
                 return ["PASS"]
-            if MahjongBoard.fan_value(self.zimo(p)) >= HU_FAN:
+            if MahjongBoard.fan_value(self.zimo(p)) >= HU_FAN + len(self.huas[p]):
                 return ["ZIMO"]
             ans = ["PLAY"]
             c = self.lastmo
@@ -330,7 +339,7 @@ class MahjongBoard:
         else:
             if self.nextturn[0] == p:
                 return ["MO"]
-            elif MahjongBoard.fan_value(self.dianpao(p)) >= HU_FAN:
+            elif MahjongBoard.fan_value(self.dianpao(p)) >= HU_FAN + len(self.huas[p]):
                 return ["DIANPAO"]
             else:
                 return ["PASS"]

@@ -41,7 +41,7 @@ def runerror(p):
 
 def hu(p, cfrom, fan):
     ans = MahjongBoard.fan_value(fan)
-    if ans < HU_FAN:
+    if ans < HU_FAN + len(board.huas[p]):
         runerror(p)
     score = [0] * PlayerNum
     for i in range(PlayerNum):

@@ -793,6 +793,7 @@ static bool is_basic_form_wait_1(tile_table_t &cnt_table, useful_table_t *waitin
             return true;
         }
         cnt_table[t] = 1;
+        break;
     }
 
     return false;
@@ -800,7 +801,6 @@ static bool is_basic_form_wait_1(tile_table_t &cnt_table, useful_table_t *waitin
 
 // 基本和型判断2张是否听牌
 static bool is_basic_form_wait_2(const tile_table_t &cnt_table, useful_table_t *waiting_table) {
-    bool ret = false;
     for (int i = 0; i < 34; ++i) {
         tile_t t = all_tiles[i];
         if (cnt_table[t] < 1) {
@@ -809,8 +809,7 @@ static bool is_basic_form_wait_2(const tile_table_t &cnt_table, useful_table_t *
         if (cnt_table[t] > 1) {
             if (waiting_table != nullptr) {  // 获取听牌张
                 (*waiting_table)[t] = true;  // 对倒
-                ret = true;
-                continue;
+                return true;
             }
             else {  // 不需要获取听牌张，则可以直接返回
                 return true;
@@ -822,8 +821,7 @@ static bool is_basic_form_wait_2(const tile_table_t &cnt_table, useful_table_t *
                 if (waiting_table != nullptr) {  // 获取听牌张
                     if (r < 9) (*waiting_table)[t + 1] = true;
                     if (r > 2) (*waiting_table)[t - 2] = true;
-                    ret = true;
-                    continue;
+                    return true;
                 }
                 else {  // 不需要获取听牌张，则可以直接返回
                     return true;
@@ -832,8 +830,7 @@ static bool is_basic_form_wait_2(const tile_table_t &cnt_table, useful_table_t *
             if (r > 2 && cnt_table[t - 2]) {  // 嵌张
                 if (waiting_table != nullptr) {  // 获取听牌张
                     (*waiting_table)[t - 1] = true;
-                    ret = true;
-                    continue;
+                    return true;
                 }
                 else {  // 不需要获取听牌张，则可以直接返回
                     return true;
@@ -841,7 +838,7 @@ static bool is_basic_form_wait_2(const tile_table_t &cnt_table, useful_table_t *
             }
         }
     }
-    return ret;
+    return false;
 }
 
 // 基本和型判断4张是否听牌
@@ -869,7 +866,7 @@ static bool is_basic_form_wait_4(tile_table_t &cnt_table, useful_table_t *waitin
 }
 
 // 递归计算基本和型是否听牌
-static bool is_basic_form_wait_recursively(tile_table_t &cnt_table, intptr_t left_cnt, useful_table_t *waiting_table) {
+static bool is_basic_form_wait_recursively(tile_table_t &cnt_table, intptr_t left_cnt, useful_table_t *waiting_table, int emu_start = 0) {
     if (left_cnt == 1) {
         return is_basic_form_wait_1(cnt_table, waiting_table);
     }
@@ -882,7 +879,7 @@ static bool is_basic_form_wait_recursively(tile_table_t &cnt_table, intptr_t lef
         }
     }
 
-    for (int i = 0; i < 34; ++i) {
+    for (int i = emu_start; i < 34; ++i) {
         tile_t t = all_tiles[i];
         if (cnt_table[t] < 1) {
             continue;
@@ -892,7 +889,7 @@ static bool is_basic_form_wait_recursively(tile_table_t &cnt_table, intptr_t lef
         if (cnt_table[t] > 2) {
             // 削减这组刻子，递归
             cnt_table[t] -= 3;
-            if (is_basic_form_wait_recursively(cnt_table, left_cnt - 3, waiting_table)) {
+            if (is_basic_form_wait_recursively(cnt_table, left_cnt - 3, waiting_table, i)) {
                 ret = true;
             }
             // 还原
@@ -910,7 +907,7 @@ static bool is_basic_form_wait_recursively(tile_table_t &cnt_table, intptr_t lef
                 --cnt_table[t];
                 --cnt_table[t + 1];
                 --cnt_table[t + 2];
-                if (is_basic_form_wait_recursively(cnt_table, left_cnt - 3, waiting_table)) {
+                if (is_basic_form_wait_recursively(cnt_table, left_cnt - 3, waiting_table, i)) {
                     ret = true;
                 }
                 // 还原
@@ -1663,7 +1660,7 @@ static bool is_division_branch_exist(intptr_t fixed_cnt, intptr_t step, const di
 }
 
 // 递归划分
-static bool divide_recursively(tile_table_t &cnt_table, intptr_t fixed_cnt, intptr_t step, division_t *work_division, division_result_t *result) {
+static bool divide_recursively(tile_table_t &cnt_table, intptr_t fixed_cnt, intptr_t step, division_t *work_division, division_result_t *result, int emu_start = 0) {
     const intptr_t idx = step + fixed_cnt;
     if (idx == 4) {  // 4组面子都有了
         return divide_tail(cnt_table, fixed_cnt, work_division, result);
@@ -1671,8 +1668,11 @@ static bool divide_recursively(tile_table_t &cnt_table, intptr_t fixed_cnt, intp
 
     bool ret = false;
 
+    //while (emu_start < 34 && cnt_table[all_tiles[emu_start]] < 1)
+    //    ++emu_start;
+
     // 按牌表张遍历牌
-    for (int i = 0; i < 34; ++i) {
+    for (int i = emu_start; i < 34; ++i) {
         tile_t t = all_tiles[i];
         if (cnt_table[t] < 1) {
             continue;
@@ -1684,7 +1684,7 @@ static bool divide_recursively(tile_table_t &cnt_table, intptr_t fixed_cnt, intp
             if (!is_division_branch_exist(fixed_cnt, step + 1, work_division, result)) {
                 // 削减这组刻子，递归
                 cnt_table[t] -= 3;
-                if (divide_recursively(cnt_table, fixed_cnt, step + 1, work_division, result)) {
+                if (divide_recursively(cnt_table, fixed_cnt, step + 1, work_division, result, i)) {
                     ret = true;
                 }
                 // 还原
@@ -1701,7 +1701,7 @@ static bool divide_recursively(tile_table_t &cnt_table, intptr_t fixed_cnt, intp
                     --cnt_table[t];
                     --cnt_table[t + 1];
                     --cnt_table[t + 2];
-                    if (divide_recursively(cnt_table, fixed_cnt, step + 1, work_division, result)) {
+                    if (divide_recursively(cnt_table, fixed_cnt, step + 1, work_division, result, i)) {
                         ret = true;
                     }
                     // 还原
@@ -1711,6 +1711,9 @@ static bool divide_recursively(tile_table_t &cnt_table, intptr_t fixed_cnt, intp
                 }
             }
         }
+
+        if (cnt_table[t] != 2)
+            return ret;
     }
 
     return ret;

@@ -2,6 +2,8 @@
 
 //#define KEEP_RUN
 
+#define LOCAL
+
 int nturn, turn = 1;
 
 void output(const char *fmt, ...)
@@ -31,9 +33,9 @@ void ungets(const char *s)
         ungetc(*i, stdin);
 }
 
-const double eps = 1e-10;
+const double eps = 1e-3;
 const double inf = 1e100;
-const double timeout = 0.9;
+const double timeout = 0.93;
 
 class Timer
 {
@@ -55,7 +57,7 @@ public:
 
 #define TIMER_JUMP(timer, label) {if (timer.out()) goto label;}
 
-#define ADDHUA 1
+#define ADDHUA 0
 
 #define CNAME_WAN   0
 #define CNAME_BING  1
@@ -143,6 +145,7 @@ void initAllPacks()
         allpacks.push_back(Pack(PNAME_PENG, Card(CNAME_JIAN, i), FROM_ANY));
         allpacks.push_back(Pack(PNAME_GANG, Card(CNAME_JIAN, i), FROM_ANY));
     }
+    //random_shuffle(allpacks.begin(), allpacks.end());
     for (int i = 0; i < CNAME_XUNUM; ++i)
         for (int j = 1; j <= 9; ++j)
             allduis.push_back(Pack(PNAME_NONE, Card(i, j), FROM_ANY));
@@ -284,7 +287,7 @@ int getFan(const HState &a)
     stateToString(a, pack, hand);
     try {
         vector<pair<int, string>> ans;
-        string wintile = hand.front();
+        string wintile = hand.front(); // strange
         hand.erase(hand.begin());
         ans = MahjongFanCalculator(pack, hand, wintile, huashu[menfeng], false, false, false, false, menfeng, quanfeng);
         int fan = 0;
@@ -333,6 +336,7 @@ double stateProb(const HState &a)
     int cnt = 0;
     for (auto i : a.packs)
         if (i.from == FROM_ANY) {
+            /*
             if (i.pname == PNAME_CHI) {
                 if (handcards[i.card.cname][i.card.num - 1]
                     && handcards[i.card.cname][i.card.num]
@@ -343,6 +347,7 @@ double stateProb(const HState &a)
                 if (reqnum[i.pname] <= handcards[i.card.cname][i.card.num])
                     return 0;
             }
+            */
             ++cnt;
         }
 
@@ -353,9 +358,9 @@ double stateProb(const HState &a)
             ans *= getprob(wallcards[c.cname][c.num], i.second - handcards[c.cname][c.num]);
     }
 
-    ans *= pow(1.2, cnt);
-
-    return min(ans, 1.0);
+    ans *= pow(0.6, cnt);
+    //return min(ans, 1.0);
+    return ans;
 }
 
 void qidui(vector<HState> &targets)
@@ -370,7 +375,7 @@ void qidui(vector<HState> &targets)
             return;
         t.packs.push_back(Pack(pname, card, FROM_SELF));
         if ((t.pr = stateProb(t)) > eps) {
-            t.pr2 = t.pr * pow(1.5, t.packs.size());
+            t.pr2 = t.pr * pow(2, t.packs.size());
             if (t.packs.size() == 7) {
                 int fan = getFan(t);
                 if (goodfan(fan, huashu[menfeng])) {
@@ -423,7 +428,7 @@ void shisanyao(vector<HState> &targets)
 double evaluate(const vector<Pack> &packs, vector<HState> &targets)
 {
     const int TARGET_SIZE_ALL = 500;
-    const int TARGET_SIZE_SUM = 5;
+    const int TARGET_SIZE_SUM = 3;
     targets.clear();
 
     priority_queue<HState> q;
@@ -431,23 +436,35 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
     auto update = [&](uint8_t pname, Card card) {
         HState t = s;
         // 更新needcards
+        int badcnt = 0;
         if (pname == PNAME_CHI) {
             for (int i = card.num - 1; i <= card.num + 1; ++i) {
                 Card c(card.cname, i);
-                if (addCardList(t.needcards, c, 1) > handcards[card.cname][i] + wallcards[card.cname][i])
+                int num = addCardList(t.needcards, c, 1); 
+                if (num > handcards[card.cname][i] + wallcards[card.cname][i])
                     return;
+                if (num > handcards[card.cname][i])
+                    ++badcnt;
             }
+            if (badcnt == 3)
+                return;
         }
         else {
-            if (addCardList(t.needcards, card, reqnum[pname]) > handcards[card.cname][card.num] + wallcards[card.cname][card.num])
+            int num = addCardList(t.needcards, card, reqnum[pname]);
+            if (num > handcards[card.cname][card.num] + wallcards[card.cname][card.num])
+                return;
+            badcnt = max(0, num - handcards[card.cname][card.num]);
+            if (badcnt == reqnum[pname])
                 return;
         }
 
         // 是否鸣牌
         for (int from : {FROM_ANY, FROM_SELF}) {
+            if (from == FROM_ANY && pname == PNAME_NONE)
+                continue;
             t.packs.push_back(Pack(pname, card, from));
             if ((t.pr = stateProb(t)) > eps) {
-                t.pr2 = t.pr * pow(1.5, t.packs.size());
+                t.pr2 = t.pr * pow(3, t.packs.size());
                 if (pname == PNAME_NONE) {
                     int fan = getFan(t);
                     if (goodfan(fan, huashu[menfeng])) {
@@ -466,6 +483,7 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
     s.pr = s.pr2 = 1;
     q.push(s);
     while (targets.size() < TARGET_SIZE_ALL && !q.empty()) {
+        TIMER_JUMP(timer, skip_evaluate);
         s = q.top();
         q.pop();
         if (s.packs.size() < 4) {
@@ -493,11 +511,12 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
         shisanyao(targets);
     }
 
+skip_evaluate:
     sort(targets.begin(), targets.end(), [](const HState & a, const HState & b) {return a.pr > b.pr;});
     targets.resize(min((int)targets.size(), TARGET_SIZE_SUM));
     double ans = 0;
     for (const HState &i : targets)
-        ans += i.pr;
+        ans += (1 - ans) * i.pr;
     return ans;
 }
 
@@ -560,7 +579,7 @@ Card selectPlay(Card newcard, bool lastgang)
             TIMER_JUMP(timer, all_end);
         }
 
-    for (int i = 0; i < CNAME_TNUM; ++i)
+    for (int i = CNAME_TNUM - 1; i >= 0; --i)
         for (int j = 1; j <= 9; ++j) {
             // PLAY
             if (handcards[i][j]) {
@@ -628,7 +647,7 @@ void forcePlay(Card newcard, int from, bool lastgang)
 
     auto update_emu = [&](char tp) {
         bool ok = false;
-        for (int i = 0; i < CNAME_TNUM; ++i)
+        for (int i = CNAME_TNUM - 1; i >= 0; --i)
             for (int j = 1; j <= 9; ++j)
                 if (handcards[i][j]) {
                     if (i == newcard.cname && j == newcard.num)
@@ -705,6 +724,7 @@ all_end:
 
 void init()
 {
+    //srand(time(0));
     for (int i = 0; i < CNAME_XUNUM; ++i)
         for (int j = 1; j <= 9; ++j)
             wallcards[i][j] = 4;
