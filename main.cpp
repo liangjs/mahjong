@@ -2,7 +2,7 @@
 
 //#define KEEP_RUN
 
-#define LOCAL
+//#define LOCAL
 
 int nturn, turn = 1;
 
@@ -36,6 +36,8 @@ void ungets(const char *s)
 const double eps = 1e-3;
 const double inf = 1e100;
 const double timeout = 0.93;
+
+#define ALPHA 2.5
 
 class Timer
 {
@@ -110,6 +112,7 @@ struct Card {
 #define PNAME_PENG  1
 #define PNAME_GANG  2
 #define PNAME_CHI   3
+#define PNAME_BUKAO 4
 const int reqnum[3] = {2, 3, 4};
 const char *pname2char[4] = {"NONE", "PENG", "GANG", "CHI"};
 #define FROM_SELF   0xff    // 非鸣牌
@@ -163,10 +166,62 @@ int wallcnt;
 vector<Pack> packs[4];
 vector<Card> throweds[4];
 
+double card_prob[CNAME_TNUM][NUM_MAX] = {
+    {
+        0,
+        /*W1*/ 0.19059186320754481,
+        /*W2*/ 0.191428301886785,
+        /*W3*/ 0.1933301886792462,
+        /*W4*/ 0.1922028301886828,
+        /*W5*/ 0.1923260613207562,
+        /*W6*/ 0.19241061320754177,
+        /*W7*/ 0.19330436320754057,
+        /*W8*/ 0.19179775943396737,
+        /*W9*/ 0.19055448113207335
+    },
+    {
+        0,
+        /*B1*/ 0.1908747641509353,
+        /*B2*/ 0.19179198113207924,
+        /*B3*/ 0.19329893867925105,
+        /*B4*/ 0.19250766509434825,
+        /*B5*/ 0.19245955188678532,
+        /*B6*/ 0.19228502358490845,
+        /*B7*/ 0.19338915094339904,
+        /*B8*/ 0.19195188679245453,
+        /*B9*/ 0.19083466981132083
+    },
+    {
+        0,
+        /*T1*/ 0.1904905660377342,
+        /*T2*/ 0.19168455188679095,
+        /*T3*/ 0.19310483490565417,
+        /*T4*/ 0.1924074292452801,
+        /*T5*/ 0.19244693396225776,
+        /*T6*/ 0.1924824292452778,
+        /*T7*/ 0.19324209905660386,
+        /*T8*/ 0.19176816037736108,
+        /*T9*/ 0.1908910377358543
+    },
+    {
+        0,
+        /*F1*/ 0.18849209905661088,
+        /*F2*/ 0.18723702830188307,
+        /*F3*/ 0.18719834905661073,
+        /*F4*/ 0.18707134433962455
+    },
+    {
+        0,
+        /*J1*/ 0.18886297169811583,
+        /*J2*/ 0.18865648584906428,
+        /*J3*/ 0.18885377358490713
+    }
+};
+
 /* 胡牌牌型（一般） */
 struct HState {
     vector<Pack> packs; // pname=0 表示对子/将牌
-    vector<pair<Card, int>> needcards, havecards;
+    vector<pair<Card, int>> needcards;
     double pr; // 概率
     double pr2; // 大的先搜
     //double ex; // 番数期望
@@ -180,8 +235,13 @@ void stateToString(const HState &a, vector<pair<string, pair<string, int>>> &pac
 {
     pack.clear();
     hand.clear();
+    for (auto i : a.needcards)
+        for (int j = 0; j < i.second; ++j)
+            hand.push_back(i.first.toString());
     for (Pack p : a.packs)
         if (p.pname == PNAME_NONE || p.from == FROM_SELF) { // 暗牌
+            /* keep this! */;
+            /*
             if (p.pname == PNAME_CHI) {
                 hand.push_back(Card(p.card.cname, p.card.num - 1).toString());
                 hand.push_back(p.card.toString());
@@ -191,6 +251,7 @@ void stateToString(const HState &a, vector<pair<string, pair<string, int>>> &pac
                 for (int i = 0; i < reqnum[p.pname]; ++i)
                     hand.push_back(p.card.toString());
             }
+            */
         }
         else { // 明牌
             switch (p.pname) {
@@ -204,22 +265,44 @@ void stateToString(const HState &a, vector<pair<string, pair<string, int>>> &pac
                 pack.push_back(make_pair("GANG", make_pair(p.card.toString(), p.from == FROM_ANY ? 1 : (menfeng - p.from) & 3)));
                 break;
             }
+            if (p.from == FROM_ANY) {
+                if (p.pname == PNAME_CHI) {
+                    hand.erase(find(hand.begin(), hand.end(), Card(p.card.cname, p.card.num - 1).toString()));
+                    hand.erase(find(hand.begin(), hand.end(), p.card.toString()));
+                    hand.erase(find(hand.begin(), hand.end(), Card(p.card.cname, p.card.num + 1).toString()));
+                }
+                else {
+                    for (int i = 0; i < reqnum[p.pname]; ++i)
+                        hand.erase(find(hand.begin(), hand.end(), p.card.toString()));
+                }
+            }
         }
+    sort(hand.begin(), hand.end(), [](const string & a, const string & b) {
+        int t1 = char2cname(a[0]);
+        int t2 = char2cname(b[0]);
+        if (t1 != t2)
+            return t1 < t2;
+        return a[1] < b[1];
+    });
+}
+
+void showHState(const HState &s)
+{
+    vector<pair<string, pair<string, int>>> pack;
+    vector<string> hand;
+    stateToString(s, pack, hand);
+    for (auto i : pack)
+        printf("{%s, %s} ", i.first.c_str(), i.second.first.c_str());
+    printf("| ");
+    for (auto i : hand)
+        printf("%s ", i.c_str());
+    printf("| %g\n", s.pr);
 }
 
 void showTargets(const vector<HState> &a)
 {
-    vector<pair<string, pair<string, int>>> pack;
-    vector<string> hand;
-    for (const HState &s : a) {
-        stateToString(s, pack, hand);
-        for (auto i : pack)
-            printf("{%s, %s} ", i.first.c_str(), i.second.first.c_str());
-        printf("| ");
-        for (auto i : hand)
-            printf("%s ", i.c_str());
-        printf("| %g\n", s.pr);
-    }
+    for (const HState &s : a)
+        showHState(s);
 }
 
 void showHand()
@@ -301,11 +384,11 @@ int getFan(const HState &a)
 }
 
 /* n张牌获得m张的概率 */
-double getprob(int n, int m)
+double getprob(const Card &card, int n, int m)
 {
     if (m > n)
         return 0;
-    const double pr = 0.25;
+    double pr = card_prob[card.cname][card.num];
     const int fac[5] = {1, 1, 2, 6, 24};
     double ans = 0;
     for (int i = 0; i < m; ++i)
@@ -355,7 +438,7 @@ double stateProb(const HState &a)
     for (auto i : a.needcards) {
         Card c = i.first;
         if (i.second > handcards[c.cname][c.num])
-            ans *= getprob(wallcards[c.cname][c.num], i.second - handcards[c.cname][c.num]);
+            ans *= getprob(c, wallcards[c.cname][c.num], i.second - handcards[c.cname][c.num]);
     }
 
     ans *= pow(0.6, cnt);
@@ -425,6 +508,54 @@ void shisanyao(vector<HState> &targets)
         targets.push_back(s);
 }
 
+void bukao(vector<HState> &targets)
+{
+    HState s;
+    Card cs0[16];
+    int n = 0;
+    for (int i = 1; i <= 4; ++i)
+        if (handcards[CNAME_FENG][i] == 0)
+            cs0[n++] = Card(CNAME_FENG, i);
+        else
+            s.needcards.emplace_back(Card(CNAME_FENG, i), 1);
+    for (int i = 1; i <= 3; ++i)
+        if (handcards[CNAME_JIAN][i] == 0)
+            cs0[n++] = Card(CNAME_JIAN, i);
+        else
+            s.needcards.emplace_back(Card(CNAME_JIAN, i), 1);
+    int n0 = n;
+    for (int p1 = 0; p1 < 3; ++p1)
+        for (int p2 = 0; p2 < 3; ++p2) {
+            if (p1 == p2)
+                continue;
+            int p3 = 3 - p1 - p2;
+            Card cs[16];
+            memcpy(cs, cs0, sizeof(Card) * n0);
+            n = n0;
+            s.needcards.resize(7 - n0);
+            for (int j : {1, 4, 7})
+                if (handcards[p1][j] == 0)
+                    cs[n++] = Card(p1, j);
+                else
+                    s.needcards.emplace_back(Card(p1, j), 1);
+            for (int j : {2, 5, 8})
+                if (handcards[p2][j] == 0)
+                    cs[n++] = Card(p2, j);
+                else
+                    s.needcards.emplace_back(Card(p2, j), 1);
+            for (int j : {3, 6, 9})
+                if (handcards[p3][j] == 0)
+                    cs[n++] = Card(p3, j);
+                else
+                    s.needcards.emplace_back(Card(p3, j), 1);
+            sort(cs, cs + n, [](const Card & a, const Card & b) {return wallcards[a.cname][a.num] > wallcards[b.cname][b.num];});
+            for (int i = 0; i < n - 2; ++i)
+                s.needcards.emplace_back(cs[i], 1);
+            if ((s.pr = stateProb(s)) > eps)
+                targets.push_back(s);
+        }
+}
+
 double evaluate(const vector<Pack> &packs, vector<HState> &targets)
 {
     const int TARGET_SIZE_ALL = 500;
@@ -440,7 +571,7 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
         if (pname == PNAME_CHI) {
             for (int i = card.num - 1; i <= card.num + 1; ++i) {
                 Card c(card.cname, i);
-                int num = addCardList(t.needcards, c, 1); 
+                int num = addCardList(t.needcards, c, 1);
                 if (num > handcards[card.cname][i] + wallcards[card.cname][i])
                     return;
                 if (num > handcards[card.cname][i])
@@ -464,7 +595,7 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
                 continue;
             t.packs.push_back(Pack(pname, card, from));
             if ((t.pr = stateProb(t)) > eps) {
-                t.pr2 = t.pr * pow(3, t.packs.size());
+                t.pr2 = t.pr * pow(ALPHA, t.packs.size());
                 if (pname == PNAME_NONE) {
                     int fan = getFan(t);
                     if (goodfan(fan, huashu[menfeng])) {
@@ -477,6 +608,28 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
             }
             t.packs.pop_back();
         }
+    };
+
+    auto zuhelong = [&]() {
+        for (int p1 = 0; p1 < 3; ++p1)
+            for (int p2 = 0; p2 < 3; ++p2) {
+                if (p1 == p2)
+                    continue;
+                int p3 = 3 - p1 - p2;
+                HState t = s;
+                for (int i = 0; i < 3; ++i)
+                    t.packs.push_back(Pack(PNAME_BUKAO, Card(), FROM_SELF));
+                for (int j : {1, 4, 7})
+                    addCardList(t.needcards, Card(p1, j), 1);
+                for (int j : {2, 5, 8})
+                    addCardList(t.needcards, Card(p2, j), 1);
+                for (int j : {3, 6, 9})
+                    addCardList(t.needcards, Card(p3, j), 1);
+                if ((t.pr = stateProb(t)) > eps) {
+                    t.pr2 = t.pr * pow(ALPHA, t.packs.size());
+                    q.push(t);
+                }
+            }
     };
 
     s.packs = packs;
@@ -504,11 +657,14 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
             for (auto i : allduis)
                 update(i.pname, i.card);
         }
+        if (s.packs.size() == 1)
+            zuhelong();
     }
 
     if (packs.empty()) {
         qidui(targets);
         shisanyao(targets);
+        bukao(targets); // 七星不靠、全不靠
     }
 
 skip_evaluate:
@@ -748,6 +904,7 @@ void read0()
 {
     scanf("%d", &nturn);
     scanf("%*d%d%d", &menfeng, &quanfeng);
+    swap(card_prob[CNAME_FENG][1], card_prob[CNAME_FENG][quanfeng]);
     output("PASS\n");
 }
 
