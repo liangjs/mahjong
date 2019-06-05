@@ -28,8 +28,12 @@ def get_stat(file_name):
             continue
         op = line[1]
         if op == "打牌":
-            pass
+            card = Card.from_str(eval(line[2])[0])
+            cid = card_id(card)
+            if cid != -1:
+                stat[cid] += 1
         elif op.find("摸牌") != -1:
+            continue
             card = Card.from_str(eval(line[2])[0])
             cid = card_id(card)
             if cid != -1:
@@ -41,25 +45,33 @@ def get_stat(file_name):
         elif op == "补杠":
             pass
         elif op == "明杠":
+            """
             card = Card.from_str(line[3])
             cid = card_id(card)
             if cid != -1:
                 stat[cid] += 1
+                """
         elif op == "碰":
+            """
             card = Card.from_str(line[3])
             cid = card_id(card)
             if cid != -1:
                 stat[cid] += 1
+                """
         elif op == "吃":
+            """
             card = Card.from_str(line[3])
             cid = card_id(card)
             if cid != -1:
                 stat[cid] += 1
+                """
         elif op == "和牌":
+            """
             card = Card.from_str(line[3])
             cid = card_id(card)
             if cid != -1:
                 stat[cid] += 1
+                """
             break
         else:
             raise RuntimeError(op)

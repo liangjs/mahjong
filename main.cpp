@@ -2,7 +2,7 @@
 
 //#define KEEP_RUN
 
-//#define LOCAL
+#define LOCAL
 
 int nturn, turn = 1;
 
@@ -36,8 +36,10 @@ void ungets(const char *s)
 const double eps = 1e-3;
 const double inf = 1e100;
 const double timeout = 0.93;
+const double timeout2 = timeout - 0.2;
 
-#define ALPHA 2.5
+#define ALPHA 2.0
+#define BETA 1.7
 
 class Timer
 {
@@ -125,6 +127,10 @@ struct Pack {
                      * 来自自己的杠是暗杠
                      */
     Pack(uint8_t p, Card c, uint8_t f = FROM_SELF): pname(p), card(c), from(f) {}
+    bool operator== (const Pack &a)const
+    {
+        return pname == a.pname && card == a.card && from == a.from;
+    }
 };
 
 vector<Pack> allpacks, allduis;
@@ -165,57 +171,59 @@ int wallcards[CNAME_TNUM][NUM_MAX]; // 牌墙
 int wallcnt;
 vector<Pack> packs[4];
 vector<Card> throweds[4];
+int sumthrowed[CNAME_TNUM][NUM_MAX];
 
+#define PROB_BASIC 0.181
 double card_prob[CNAME_TNUM][NUM_MAX] = {
     {
         0,
-        /*W1*/ 0.19059186320754481,
-        /*W2*/ 0.191428301886785,
-        /*W3*/ 0.1933301886792462,
-        /*W4*/ 0.1922028301886828,
-        /*W5*/ 0.1923260613207562,
-        /*W6*/ 0.19241061320754177,
-        /*W7*/ 0.19330436320754057,
-        /*W8*/ 0.19179775943396737,
-        /*W9*/ 0.19055448113207335
+        /*W1*/ 0.20014716981132646,
+        /*W2*/ 0.18612405660377404,
+        /*W3*/ 0.17132558962264108,
+        /*W4*/ 0.16806485849056593,
+        /*W5*/ 0.16861179245282204,
+        /*W6*/ 0.16806556603773662,
+        /*W7*/ 0.17068749999999314,
+        /*W8*/ 0.18516344339623386,
+        /*W9*/ 0.19859433962264664,
     },
     {
         0,
-        /*B1*/ 0.1908747641509353,
-        /*B2*/ 0.19179198113207924,
-        /*B3*/ 0.19329893867925105,
-        /*B4*/ 0.19250766509434825,
-        /*B5*/ 0.19245955188678532,
-        /*B6*/ 0.19228502358490845,
-        /*B7*/ 0.19338915094339904,
-        /*B8*/ 0.19195188679245453,
-        /*B9*/ 0.19083466981132083
+        /*B1*/ 0.19886191037735815,
+        /*B2*/ 0.18510035377359085,
+        /*B3*/ 0.1700841981132059,
+        /*B4*/ 0.16742275943395932,
+        /*B5*/ 0.16753785377357916,
+        /*B6*/ 0.16769516509434126,
+        /*B7*/ 0.17050530660376617,
+        /*B8*/ 0.18454410377358685,
+        /*B9*/ 0.19797841981132222,
     },
     {
         0,
-        /*T1*/ 0.1904905660377342,
-        /*T2*/ 0.19168455188679095,
-        /*T3*/ 0.19310483490565417,
-        /*T4*/ 0.1924074292452801,
-        /*T5*/ 0.19244693396225776,
-        /*T6*/ 0.1924824292452778,
-        /*T7*/ 0.19324209905660386,
-        /*T8*/ 0.19176816037736108,
-        /*T9*/ 0.1908910377358543
+        /*T1*/ 0.19946509433961782,
+        /*T2*/ 0.1859121462264178,
+        /*T3*/ 0.17142830188679006,
+        /*T4*/ 0.16740011792453463,
+        /*T5*/ 0.1672606132075479,
+        /*T6*/ 0.16668089622641433,
+        /*T7*/ 0.17009198113208013,
+        /*T8*/ 0.1837133254716994,
+        /*T9*/ 0.1979745283018921,
     },
     {
         0,
-        /*F1*/ 0.18849209905661088,
-        /*F2*/ 0.18723702830188307,
-        /*F3*/ 0.18719834905661073,
-        /*F4*/ 0.18707134433962455
+        /*F1*/ 0.23246709905660576,
+        /*F2*/ 0.2363240566037708,
+        /*F3*/ 0.23690518867924523,
+        /*F4*/ 0.2375897405660412,
     },
     {
         0,
-        /*J1*/ 0.18886297169811583,
-        /*J2*/ 0.18865648584906428,
-        /*J3*/ 0.18885377358490713
-    }
+        /*J1*/ 0.23022889150943976,
+        /*J2*/ 0.23060507075471476,
+        /*J3*/ 0.230497759433977,
+    },
 };
 
 /* 胡牌牌型（一般） */
@@ -228,6 +236,20 @@ struct HState {
     bool operator< (const HState &a) const
     {
         return pr2 < a.pr2;
+    }
+    bool operator==(const HState &a)const
+    {
+        if (packs.size() != a.packs.size())
+            return false;
+        if (needcards.size() != a.needcards.size())
+            return false;
+        for (int i = 0; i < (int)packs.size(); ++i)
+            if (!(packs[i] == a.packs[i]))
+                return false;
+        for (int i = 0; i < (int)needcards.size(); ++i)
+            if (!(needcards[i] == a.needcards[i]))
+                return false;
+        return true;
     }
 };
 
@@ -384,11 +406,10 @@ int getFan(const HState &a)
 }
 
 /* n张牌获得m张的概率 */
-double getprob(const Card &card, int n, int m)
+double getprob(double pr, int n, int m)
 {
     if (m > n)
         return 0;
-    double pr = card_prob[card.cname][card.num];
     const int fac[5] = {1, 1, 2, 6, 24};
     double ans = 0;
     for (int i = 0; i < m; ++i)
@@ -437,8 +458,23 @@ double stateProb(const HState &a)
     double ans = 1;
     for (auto i : a.needcards) {
         Card c = i.first;
-        if (i.second > handcards[c.cname][c.num])
-            ans *= getprob(c, wallcards[c.cname][c.num], i.second - handcards[c.cname][c.num]);
+        if (i.second > handcards[c.cname][c.num]) {
+            double pr = PROB_BASIC;
+            bool ok = false;
+            if (handcards[c.cname][c.num] >= 2)
+                ok = true;
+            if (c.cname < CNAME_XUNUM && !ok) {
+                if (c.num >= 3 && handcards[c.cname][c.num - 2] && handcards[c.cname][c.num - 1])
+                    ok = true;
+                if (c.num >= 2 && c.num <= 8 && handcards[c.cname][c.num - 1] && handcards[c.cname][c.num + 1])
+                    ok = true;
+                if (c.num <= 7 && handcards[c.cname][c.num + 1] && handcards[c.cname][c.num + 2])
+                    ok = true;
+            }
+            if (ok)
+                pr = card_prob[c.cname][c.num];
+            ans *= getprob(pr, wallcards[c.cname][c.num], i.second - handcards[c.cname][c.num]);
+        }
     }
 
     ans *= pow(0.6, cnt);
@@ -556,10 +592,12 @@ void bukao(vector<HState> &targets)
         }
 }
 
-double evaluate(const vector<Pack> &packs, vector<HState> &targets)
+const int TARGET_SIZE_ALL = 500;
+const int TARGET_SIZE_ALL_SMALL = 200;
+const int TARGET_SIZE_SUM = 3;
+
+double evaluate(const vector<Pack> &packs, vector<HState> &targets, int size_all = TARGET_SIZE_ALL)
 {
-    const int TARGET_SIZE_ALL = 500;
-    const int TARGET_SIZE_SUM = 3;
     targets.clear();
 
     priority_queue<HState> q;
@@ -635,7 +673,7 @@ double evaluate(const vector<Pack> &packs, vector<HState> &targets)
     s.packs = packs;
     s.pr = s.pr2 = 1;
     q.push(s);
-    while (targets.size() < TARGET_SIZE_ALL && !q.empty()) {
+    while ((int)targets.size() < size_all && !q.empty()) {
         TIMER_JUMP(timer, skip_evaluate);
         s = q.top();
         q.pop();
@@ -676,6 +714,68 @@ skip_evaluate:
     return ans;
 }
 
+double emu_play(vector<HState> &targets, Card &card)
+{
+    vector<HState> tvs, _tvs;
+    for (int i = CNAME_TNUM - 1; i >= 0; --i)
+        for (int j = 1; j <= 9; ++j)
+            if (handcards[i][j]) {
+                --handcards[i][j];
+                vector<HState> tv;
+                evaluate(packs[menfeng], tv, TARGET_SIZE_ALL_SMALL);
+                _tvs.insert(_tvs.end(), tv.begin(), tv.end());
+                ++handcards[i][j];
+                if (timer.get() > timeout2)
+                    goto skip_emu;
+            }
+skip_emu:
+    for (int i = 0; i < (int)_tvs.size(); ++i) {
+        bool bad = false;
+        for (int j = i + 1; j < (int)_tvs.size() && !bad; ++j)
+            if (_tvs[i] == _tvs[j])
+                bad = true;
+        if (!bad)
+            tvs.push_back(_tvs[i]);
+    }
+    double maxpr = 0;
+    for (int i = CNAME_TNUM - 1; i >= 0; --i)
+        for (int j = 1; j <= 9; ++j)
+            if (handcards[i][j]) {
+                --handcards[i][j];
+                vector<HState> tv = tvs;
+                for (HState &i : tv)
+                    i.pr = stateProb(i);
+                double v = 0;
+                sort(tv.begin(), tv.end(), [](const HState & a, const HState & b) {return a.pr > b.pr;});
+                tv.resize(min((int)tv.size(), TARGET_SIZE_SUM));
+                for (const HState &i : tv)
+                    v += (1 - v) * i.pr;
+#ifdef LOCAL
+                printf("card: %c%d, prob: %g\n", cname2char[i], j, v);
+                showTargets(tv);
+                putchar('\n');
+#endif
+                bool better = v > maxpr + eps;
+                if (!better && fabs(v - maxpr) < eps) {
+                    if (!better && handcards[i][j] + 1 < handcards[card.cname][card.num])
+                        better = true;
+                    if (!better && sumthrowed[i][j] > sumthrowed[card.cname][card.num])
+                        better = true;
+                    if (!better && card_prob[i][j] > card_prob[card.cname][card.num])
+                        better = true;
+                }
+                if (better) {
+                    maxpr = v;
+                    card = Card(i, j);
+                    targets = tv;
+                }
+                ++handcards[i][j];
+                TIMER_JUMP(timer, end_emu);
+            }
+end_emu:
+    return maxpr;
+}
+
 /* 返回打出的牌 */
 Card selectPlay(Card newcard, bool lastgang)
 {
@@ -713,15 +813,15 @@ Card selectPlay(Card newcard, bool lastgang)
     vector<HState> targets;
     Card ans;
     char anstype;
-    auto update = [&](char tp, Card card) {
-        vector<HState> tv;
-        double v = evaluate(packs[menfeng], tv);
-        if (v > maxpr || maxpr == 0) {
+    auto update = [&](char tp, Card card, double v, const vector<HState> &tv) {
+        if (v > maxpr) {
             maxpr = v;
             targets = tv;
             ans = card;
             anstype = tp;
+            return true;
         }
+        return false;
     };
 
     // BUGANG
@@ -729,30 +829,35 @@ Card selectPlay(Card newcard, bool lastgang)
         if (p.pname == PNAME_PENG && p.card == newcard) {
             p.pname = PNAME_GANG;
             --handcards[newcard.cname][newcard.num];
-            update('B', newcard);
+            vector<HState> tv;
+            double v = evaluate(packs[menfeng], tv);
+            update('B', newcard, v, tv);
             ++handcards[newcard.cname][newcard.num];
             p.pname = PNAME_PENG;
             TIMER_JUMP(timer, all_end);
         }
 
+    // GANG
     for (int i = CNAME_TNUM - 1; i >= 0; --i)
-        for (int j = 1; j <= 9; ++j) {
-            // PLAY
-            if (handcards[i][j]) {
-                --handcards[i][j];
-                update('P', Card(i, j));
-                ++handcards[i][j];
-            }
-            // GANG
+        for (int j = 1; j <= 9; ++j)
             if (handcards[i][j] == 4) {
                 handcards[i][j] = 0;
                 packs[menfeng].push_back(Pack(PNAME_GANG, Card(i, j), menfeng));
-                update('G', Card(i, j));
+                vector<HState> tv;
+                double v = evaluate(packs[menfeng], tv);
+                update('G', Card(i, j), v, tv);
                 packs[menfeng].pop_back();
                 handcards[i][j] = 4;
+                TIMER_JUMP(timer, all_end);
             }
-            TIMER_JUMP(timer, all_end);
-        }
+
+    // PLAY
+    {
+        vector<HState> tv;
+        Card card;
+        double v = emu_play(tv, card);
+        update('P', card, v, tv);
+    }
 
 all_end:
 
@@ -788,34 +893,15 @@ void forcePlay(Card newcard, int from, bool lastgang)
     Card ans, mid;
     char anstype = 'N';
 
-    auto update = [&](char tp, Card cardout) {
-        vector<HState> tv;
-        double v = evaluate(packs[menfeng], tv);
+    auto update = [&](char tp, Card card, double v, const vector<HState> &tv) {
         if (v > maxpr) {
             maxpr = v;
             targets = tv;
-            ans = cardout;
+            ans = card;
             anstype = tp;
             return true;
         }
         return false;
-    };
-
-    auto update_emu = [&](char tp) {
-        bool ok = false;
-        for (int i = CNAME_TNUM - 1; i >= 0; --i)
-            for (int j = 1; j <= 9; ++j)
-                if (handcards[i][j]) {
-                    if (i == newcard.cname && j == newcard.num)
-                        continue;
-                    --handcards[i][j];
-                    if (update(tp, Card(i, j)))
-                        ok = true;
-                    ++handcards[i][j];
-                    TIMER_JUMP(timer, emu_end);
-                }
-emu_end:
-        return ok;
     };
 
     // CHI
@@ -834,7 +920,10 @@ emu_end:
             for (int i = tmp.num - 1; i <= tmp.num + 1; ++i)
                 if (i != newcard.num)
                     --handcards[tmp.cname][i];
-            if (update_emu('C'))
+            vector<HState> tv;
+            Card card;
+            double v = emu_play(tv, card);
+            if (update('C', card, v, tv))
                 mid = tmp;
             for (int i = tmp.num - 1; i <= tmp.num + 1; ++i)
                 if (i != newcard.num)
@@ -847,7 +936,9 @@ emu_end:
     if (handcards[newcard.cname][newcard.num] == 3) {
         packs[menfeng].push_back(Pack(PNAME_GANG, newcard, from));
         handcards[newcard.cname][newcard.num] = 0;
-        update('G', Card());
+        vector<HState> tv;
+        double v = evaluate(packs[menfeng], tv);
+        update('G', Card(), v, tv);
         handcards[newcard.cname][newcard.num] = 3;
         packs[menfeng].pop_back();
     }
@@ -856,7 +947,10 @@ emu_end:
     if (handcards[newcard.cname][newcard.num] == 2) {
         packs[menfeng].push_back(Pack(PNAME_PENG, newcard, from));
         handcards[newcard.cname][newcard.num] = 0;
-        update_emu('P');
+        vector<HState> tv;
+        Card card;
+        double v = emu_play(tv, card);
+        update('P', card, v, tv);
         handcards[newcard.cname][newcard.num] = 2;
         packs[menfeng].pop_back();
     }
@@ -878,6 +972,13 @@ all_end:
         output("PASS\n");
 }
 
+void initProb()
+{
+    for (int i = 0; i < CNAME_TNUM; ++i)
+        for (int j = 1; j <= 9; ++j)
+            card_prob[i][j] = 1 - pow(1 - card_prob[i][j], BETA);
+}
+
 void init()
 {
     //srand(time(0));
@@ -891,6 +992,7 @@ void init()
     wallcnt = 144;
     initAllPacks();
     MahjongInit();
+    initProb();
 }
 
 Card readCard()
@@ -904,7 +1006,16 @@ void read0()
 {
     scanf("%d", &nturn);
     scanf("%*d%d%d", &menfeng, &quanfeng);
-    swap(card_prob[CNAME_FENG][1], card_prob[CNAME_FENG][quanfeng]);
+    rotate(card_prob[CNAME_FENG] + 1, card_prob[CNAME_FENG] + (4 - quanfeng) % 4 + 1, card_prob[CNAME_FENG] + 5);
+    /*
+    for (int i = 0; i < 3; ++i)
+        for (int j = 1; j <= 9; ++j)
+            printf("%c%d %g\n", cname2char[i], j, card_prob[i][j]);
+    for (int i = 1; i <= 4; ++i)
+        printf("%c%d %g\n", cname2char[CNAME_FENG], i, card_prob[CNAME_FENG][i]);
+    for (int i = 1; i <= 3; ++i)
+        printf("%c%d %g\n", cname2char[CNAME_JIAN], i, card_prob[CNAME_JIAN][i]);
+        */
     output("PASS\n");
 }
 
@@ -944,6 +1055,8 @@ void main_loop()
             output("PASS\n");
         }
         throweds[player].push_back(nowcard);
+        if (player != menfeng)
+            sumthrowed[nowcard.cname][nowcard.num]++;
         lastcard = nowcard;
         lastfrom = player;
     };
